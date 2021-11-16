@@ -50,7 +50,7 @@ public class Person extends AbstractEntity {
 	private Address address;
 
 	// Required for use in transactions
-	@TransactionResult private TransactionResultHolder txResultHolder;
+	@TransactionResult private Integer txResultHolder;
 
 
 	public Person() {}
@@ -165,6 +165,7 @@ public class Person extends AbstractEntity {
 
 	public Person withFirstName(String firstName) {
 		Person p = new Person(this.getId(), firstName, this.getLastname());
+		p.version = version;
 		p.txResultHolder = this.txResultHolder;
 		return p;
 	}

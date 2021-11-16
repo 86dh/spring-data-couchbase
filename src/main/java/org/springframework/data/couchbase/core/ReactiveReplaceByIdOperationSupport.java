@@ -15,6 +15,9 @@
  */
 package org.springframework.data.couchbase.core;
 
+import com.couchbase.transactions.TransactionGetResult;
+import org.springframework.data.couchbase.ReactiveCouchbaseClientFactory;
+import org.springframework.data.couchbase.transaction.CouchbaseStuffHandle;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
@@ -28,7 +31,6 @@ import org.springframework.data.couchbase.CouchbaseClientFactory;
 import org.springframework.data.couchbase.core.mapping.CouchbaseDocument;
 import org.springframework.data.couchbase.core.query.OptionsBuilder;
 import org.springframework.data.couchbase.core.support.PseudoArgs;
-import org.springframework.data.couchbase.repository.support.TransactionResultHolder;
 import org.springframework.util.Assert;
 
 import com.couchbase.client.core.error.CouchbaseException;
@@ -37,7 +39,6 @@ import com.couchbase.client.java.ReactiveCollection;
 import com.couchbase.client.java.kv.PersistTo;
 import com.couchbase.client.java.kv.ReplaceOptions;
 import com.couchbase.client.java.kv.ReplicateTo;
-import com.couchbase.transactions.AttemptContextReactive;
 import com.couchbase.transactions.components.TransactionLinks;
 
 public class ReactiveReplaceByIdOperationSupport implements ReactiveReplaceByIdOperation {
@@ -67,7 +68,7 @@ public class ReactiveReplaceByIdOperationSupport implements ReactiveReplaceByIdO
 		private final ReplicateTo replicateTo;
 		private final DurabilityLevel durabilityLevel;
 		private final Duration expiry;
-		private final AttemptContextReactive txCtx;
+		private final CouchbaseStuffHandle txCtx;
 		private final ReactiveTemplateSupport support;
 
 		private final TransactionLinks tl = new TransactionLinks(Optional.empty(), Optional.empty(), Optional.empty(),
@@ -76,7 +77,7 @@ public class ReactiveReplaceByIdOperationSupport implements ReactiveReplaceByIdO
 
 		ReactiveReplaceByIdSupport(final ReactiveCouchbaseTemplate template, final Class<T> domainType, final String scope,
 				final String collection, final ReplaceOptions options, final PersistTo persistTo, final ReplicateTo replicateTo,
-				final DurabilityLevel durabilityLevel, final Duration expiry, final AttemptContextReactive txCtx,
+				final DurabilityLevel durabilityLevel, final Duration expiry, final CouchbaseStuffHandle txCtx,
 				ReactiveTemplateSupport support) {
 			this.template = template;
 			this.domainType = domainType;
@@ -95,10 +96,27 @@ public class ReactiveReplaceByIdOperationSupport implements ReactiveReplaceByIdO
 		public Mono<T> one(T object) {
 			PseudoArgs<ReplaceOptions> pArgs = new PseudoArgs<>(template, scope, collection, options, txCtx, domainType);
 			LOG.trace("replaceById {}", pArgs);
-			CouchbaseClientFactory clientFactory = template.getCouchbaseClientFactory();
-			ReactiveCollection rc = clientFactory.withScope(pArgs.getScope()).getCollection(pArgs.getCollection()).reactive();
+			Mono<ReactiveCouchbaseTemplate> tmpl = template.doGetTemplate();
+			Mono<T> reactiveEntity = support.encodeEntity(object).flatMap(
+					converted -> tmpl.flatMap(tp -> tp.getCouchbaseClientFactory().getSession(null).flatMap(s -> {
+						if (s == null || s.getAttemptContextReactive() == null) {
+							return template.getCouchbaseClientFactory().withScope(pArgs.getScope())
+									.getCollection(pArgs.getCollection()).flatMap( collection -> collection.reactive()
+									.replace(converted.getId(), converted.export(), buildReplaceOptions(pArgs.getOptions(), object, converted))
+									.flatMap(result -> support.applyResult(object, converted, converted.getId(), result.cas(), null)));
+						} else {
+							TransactionGetResult getResult = s.transactionResultHolder(getTransactionHolder(object)).transactionGetResult();
+							return s.getAttemptContextReactive()
+									.replace(
+											getResult, converted.getContent())
+									.flatMap(result -> support.applyResult(object, converted, converted.getId(), result.cas(),
+											s.transactionResultHolder(result)));
+						}
+					})));
+			/*
+			ReactiveCollection rc = clientFactory.withScope(pArgs.getScope()).getCollection(pArgs.getCollection()).block().reactive();
 			Mono<T> reactiveEntity;
-			if (pArgs.getCtx() == null) {
+			if (pArgs.getTxOp() == null) {
 				reactiveEntity = support.encodeEntity(object)
 						.flatMap(converted -> rc
 								.replace(converted.getId(), converted.export(),
@@ -106,14 +124,17 @@ public class ReactiveReplaceByIdOperationSupport implements ReactiveReplaceByIdO
 								.flatMap(result -> support.applyResult(object, converted, converted.getId(), result.cas(), null)));
 
 			} else {
+				TransactionGetResult getResult = pArgs.getTxOp().transactionResultHolder(getTransactionHolder(object)).transactionGetResult();
 				reactiveEntity = support.encodeEntity(object)
-						.flatMap(converted -> pArgs.getCtx()
-								.replace(getTransactionHolder(object).transactionGetResult(),
-										converted.getContent()/*buildTranasactionOptions(pArgs.getOptions(), object, converted)*/)
+						.flatMap(converted -> pArgs.getTxOp().getAttemptContextReactive()
+								.replace( getResult,
+										converted.getContent())
 								.flatMap(result -> support.applyResult(object, converted, converted.getId(), result.cas(),
-										new TransactionResultHolder(result))));
+										pArgs.getTxOp().transactionResultHolder(result))));
 
 			}
+			*/
+
 			return reactiveEntity.onErrorMap(throwable -> {
 				if (throwable instanceof RuntimeException) {
 					return template.potentiallyConvertRuntimeException((RuntimeException) throwable);
@@ -123,8 +144,8 @@ public class ReactiveReplaceByIdOperationSupport implements ReactiveReplaceByIdO
 			});
 		}
 
-		private <T> TransactionResultHolder getTransactionHolder(T object) {
-			TransactionResultHolder transactionResultHolder;
+		private <T> Integer getTransactionHolder(T object) {
+			Integer transactionResultHolder;
 
 			transactionResultHolder = template.support().getTxResultHolder(object);
 			if (transactionResultHolder == null) {
@@ -190,7 +211,7 @@ public class ReactiveReplaceByIdOperationSupport implements ReactiveReplaceByIdO
 		}
 
 		@Override
-		public ReplaceByIdWithExpiry<T> transaction(final AttemptContextReactive txCtx) {
+		public ReplaceByIdWithExpiry<T> transaction(final CouchbaseStuffHandle txCtx) {
 			Assert.notNull(txCtx, "txCtx must not be null.");
 			return new ReactiveReplaceByIdSupport<>(template, domainType, scope, collection, options, persistTo, replicateTo,
 					durabilityLevel, expiry, txCtx, support);

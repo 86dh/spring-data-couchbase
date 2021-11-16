@@ -1,3 +1,18 @@
+/*
+ * Copyright 2021 the original author or authors
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *        https://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 package org.springframework.data.couchbase.core;
 
 import org.slf4j.Logger;
@@ -36,7 +51,7 @@ public abstract class AbstractTemplateSupport {
 	abstract ReactiveCouchbaseTemplate getReactiveTemplate();
 
 	public <T> T decodeEntityBase(String id, String source, long cas, Class<T> entityClass,
-			TransactionResultHolder txResultHolder) {
+																TransactionResultHolder txResultHolder) {
 
 		final CouchbaseDocument converted = new CouchbaseDocument(id);
 		converted.setId(id);
@@ -52,7 +67,7 @@ public abstract class AbstractTemplateSupport {
 			accessor.setProperty(persistentEntity.getVersionProperty(), cas);
 		}
 		if (persistentEntity.transactionResultProperty() != null) {
-			accessor.setProperty(persistentEntity.transactionResultProperty(), txResultHolder);
+			accessor.setProperty(persistentEntity.transactionResultProperty(), System.identityHashCode(txResultHolder));
 		}
 		N1qlJoinResolver.handleProperties(persistentEntity, accessor, getReactiveTemplate(), id);
 		return accessor.getBean();
@@ -77,7 +92,7 @@ public abstract class AbstractTemplateSupport {
 
 		final CouchbasePersistentProperty transactionResultProperty = persistentEntity.transactionResultProperty();
 		if (transactionResultProperty != null) {
-			accessor.setProperty(transactionResultProperty, txResultHolder);
+			accessor.setProperty(transactionResultProperty, System.identityHashCode(txResultHolder));
 		}
 		maybeEmitEvent(new AfterSaveEvent(accessor.getBean(), converted));
 		return (T) accessor.getBean();
@@ -111,14 +126,14 @@ public abstract class AbstractTemplateSupport {
 		return new ConvertingPropertyAccessor<>(accessor, converter.getConversionService());
 	}
 
-	public <T> TransactionResultHolder getTxResultHolder(T source) {
+	public <T> Integer getTxResultHolder(T source) {
 		final CouchbasePersistentEntity<?> persistentEntity = mappingContext.getRequiredPersistentEntity(source.getClass());
 		final CouchbasePersistentProperty transactionResultProperty = persistentEntity.transactionResultProperty();
 		if (transactionResultProperty == null) {
 			throw new CouchbaseException("the entity class " + source.getClass()
 					+ " does not have a property required for transactions:\n\t@TransactionResult TransactionResultHolder txResultHolder");
 		}
-		return getPropertyAccessor(source).getProperty(transactionResultProperty, TransactionResultHolder.class);
+		return getPropertyAccessor(source).getProperty(transactionResultProperty, Integer.class);
 	}
 
 	public void maybeEmitEvent(CouchbaseMappingEvent<?> event) {
@@ -137,5 +152,9 @@ public abstract class AbstractTemplateSupport {
 
 	private boolean canPublishEvent() {
 		return this.applicationContext != null;
+	}
+
+	public TranslationService getTranslationService(){
+		return translationService;
 	}
 }

@@ -69,13 +69,13 @@ class CouchbaseTemplateSupport extends AbstractTemplateSupport implements Applic
 
 	@Override
 	public <T> T decodeEntity(String id, String source, long cas, Class<T> entityClass,
-			TransactionResultHolder txHolder) {
+														TransactionResultHolder txHolder) {
 		return decodeEntityBase(id, source, cas, entityClass, txHolder);
 	}
 
 	@Override
 	public <T> T applyResult(T entity, CouchbaseDocument converted, Object id, long cas,
-			TransactionResultHolder txResultHolder) {
+													 TransactionResultHolder txResultHolder) {
 		return applyResultBase(entity, converted, id, cas, txResultHolder);
 	}
 

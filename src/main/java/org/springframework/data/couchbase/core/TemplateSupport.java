@@ -15,6 +15,7 @@
  */
 package org.springframework.data.couchbase.core;
 
+import org.springframework.data.couchbase.core.convert.translation.TranslationService;
 import org.springframework.data.couchbase.core.mapping.CouchbaseDocument;
 import org.springframework.data.couchbase.core.mapping.event.CouchbaseMappingEvent;
 import org.springframework.data.couchbase.repository.support.TransactionResultHolder;
@@ -33,5 +34,7 @@ public interface TemplateSupport {
 
 	void maybeEmitEvent(CouchbaseMappingEvent<?> event);
 
-	<T> TransactionResultHolder getTxResultHolder(T source);
+	<T> Integer getTxResultHolder(T source);
+
+  TranslationService getTranslationService();
 }

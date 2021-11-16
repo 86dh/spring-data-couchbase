@@ -29,7 +29,7 @@ import org.springframework.data.couchbase.repository.ReactiveCouchbaseRepository
 import org.springframework.data.couchbase.repository.query.CouchbaseEntityInformation;
 
 import com.couchbase.client.java.CommonOptions;
-import com.couchbase.transactions.AttemptContextReactive;
+import org.springframework.data.couchbase.transaction.CouchbaseStuffHandle;
 
 /**
  * Invocation Handler for scope/collection/options proxy for repositories
@@ -46,17 +46,17 @@ public class DynamicInvocationHandler<T> implements InvocationHandler {
 	CommonOptions<?> options;
 	String collection;
 	String scope;
-	AttemptContextReactive ctx;
+	CouchbaseStuffHandle ctx;
 
 	public DynamicInvocationHandler(T target, CommonOptions<?> options, String collection, String scope,
-			AttemptContextReactive ctx) {
+                                  CouchbaseStuffHandle ctx) {
 		this.target = target;
 		if (target instanceof CouchbaseRepository) {
 			reactiveTemplate = ((CouchbaseTemplate) ((CouchbaseRepository) target).getOperations()).reactive();
 			this.entityInformation = ((CouchbaseRepository<?, String>) target).getEntityInformation();
 		} else if (target instanceof ReactiveCouchbaseRepository) {
-			reactiveTemplate = (ReactiveCouchbaseTemplate) ((ReactiveCouchbaseRepository) target).getOperations();
-			this.entityInformation = ((ReactiveCouchbaseRepository<?, String>) target).getEntityInformation();
+			reactiveTemplate = (ReactiveCouchbaseTemplate) ((ReactiveCouchbaseRepository) this.target).getOperations();
+			this.entityInformation = ((ReactiveCouchbaseRepository<?, String>) this.target).getEntityInformation();
 		} else {
 			throw new RuntimeException("Unknown target type: " + target.getClass());
 		}
@@ -94,7 +94,7 @@ public class DynamicInvocationHandler<T> implements InvocationHandler {
 
 		if (method.getName().equals("withTransaction")) {
 			return Proxy.newProxyInstance(repositoryClass.getClassLoader(), target.getClass().getInterfaces(),
-					new DynamicInvocationHandler<>(target, options, collection, scope, (AttemptContextReactive) args[0]));
+					new DynamicInvocationHandler<>(target, options, collection, scope, (CouchbaseStuffHandle) args[0]));
 		}
 
 		Class<?>[] paramTypes = null;
